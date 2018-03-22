@@ -93,7 +93,7 @@ ConstString ValueObjectVariable::GetQualifiedTypeName() {
 }
 
 size_t ValueObjectVariable::CalculateNumChildren(uint32_t max) {
-  CompilerType type(GetCompilerType());
+  CompilerType type = MapTypeIntoContext();
 
   if (!type.IsValid())
     return 0;

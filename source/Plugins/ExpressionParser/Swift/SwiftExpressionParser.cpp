@@ -687,24 +687,25 @@ AddRequiredAliases(Block *block, lldb::StackFrameSP &stack_frame_sp,
 
     // If 'self' is the Self archetype, resolve it to the actual metatype it is
     if (SwiftASTContext::IsSelfArchetypeType(imported_self_type)) {
+      assert(false);
       SwiftLanguageRuntime *swift_runtime =
           stack_frame_sp->GetThread()->GetProcess()->GetSwiftLanguageRuntime();
-      if (CompilerType concrete_self_type = swift_runtime->GetConcreteType(
-              stack_frame_sp.get(), ConstString("Self"))) {
-        if (SwiftASTContext *concrete_self_type_ast_ctx =
-                llvm::dyn_cast_or_null<SwiftASTContext>(
-                    concrete_self_type.GetTypeSystem())) {
-          imported_self_type = concrete_self_type_ast_ctx->CreateMetatypeType(
-              concrete_self_type);
-          imported_self_type_flags.Reset(imported_self_type.GetTypeInfo());
-          imported_self_type =
-              ImportType(swift_ast_context, imported_self_type);
-          if (imported_self_type_flags.AllSet(lldb::eTypeIsSwift |
-                                              lldb::eTypeIsMetatype)) {
-            imported_self_type = imported_self_type.GetInstanceType();
-          }
-        }
-      }
+     // if (CompilerType concrete_self_type = swift_runtime->GetConcreteType(
+     //         stack_frame_sp.get(), ConstString("Self"))) {
+     //   if (SwiftASTContext *concrete_self_type_ast_ctx =
+     //           llvm::dyn_cast_or_null<SwiftASTContext>(
+     //               concrete_self_type.GetTypeSystem())) {
+     //     imported_self_type = concrete_self_type_ast_ctx->CreateMetatypeType(
+     //         concrete_self_type);
+     //     imported_self_type_flags.Reset(imported_self_type.GetTypeInfo());
+     //     imported_self_type =
+     //         ImportType(swift_ast_context, imported_self_type);
+     //     if (imported_self_type_flags.AllSet(lldb::eTypeIsSwift |
+     //                                         lldb::eTypeIsMetatype)) {
+     //       imported_self_type = imported_self_type.GetInstanceType();
+     //     }
+     //   }
+     // }
     }
       
     // Get the instance type:
@@ -765,7 +766,8 @@ AddRequiredAliases(Block *block, lldb::StackFrameSP &stack_frame_sp,
     }
 
     imported_self_type_flags.Reset(imported_self_type.GetTypeInfo());
-    if (imported_self_type_flags.AllClear(lldb::eTypeIsArchetype)) {
+    // AUDIT THIS>
+    if (imported_self_type_flags.AllClear(lldb::eTypeIsGenericTypeParam)) {
       swift::ValueDecl *type_alias_decl = nullptr;
 
       type_alias_decl = manipulator.MakeGlobalTypealias(
@@ -1616,7 +1618,7 @@ unsigned SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
         } else {
           CompilerType actual_type(variable.GetType());
           if (Flags(actual_type.GetTypeInfo())
-                  .AllSet(lldb::eTypeIsSwift | lldb::eTypeIsArchetype)) {
+                  .AllSet(lldb::eTypeIsSwift | lldb::eTypeIsGenericTypeParam)) {
             lldb::StackFrameSP stack_frame_sp = m_stack_frame_wp.lock();
             if (stack_frame_sp && stack_frame_sp->GetThread() &&
                 stack_frame_sp->GetThread()->GetProcess()) {
@@ -1625,8 +1627,9 @@ unsigned SwiftExpressionParser::Parse(DiagnosticManager &diagnostic_manager,
                       ->GetProcess()
                       ->GetSwiftLanguageRuntime();
               if (swift_runtime) {
-                actual_type = swift_runtime->GetConcreteType(
-                    stack_frame_sp.get(), actual_type.GetTypeName());
+                assert(false);
+                //actual_type = swift_runtime->GetConcreteType(
+                //    stack_frame_sp.get(), actual_type.GetTypeName());
                 if (actual_type.IsValid())
                   variable.SetType(actual_type);
                 else

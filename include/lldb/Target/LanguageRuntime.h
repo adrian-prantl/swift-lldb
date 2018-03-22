@@ -89,7 +89,7 @@ public:
   // and an ExecutionContextScope in which one can actually fetch
   // any specialization information required.
   virtual CompilerType GetConcreteType(ExecutionContextScope *exe_scope,
-                                       ConstString abstract_type_name) {
+                                       unsigned depth, unsigned index) {
     return CompilerType();
   }
 

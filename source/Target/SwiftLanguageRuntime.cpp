@@ -2043,9 +2043,9 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_Promise(
 }
 
 SwiftLanguageRuntime::MetadataPromiseSP
-SwiftLanguageRuntime::GetPromiseForTypeNameAndFrame(const char *type_name,
+SwiftLanguageRuntime::GetPromiseForTypeNameAndFrame(unsigned depth, unsigned index,
                                                     StackFrame *frame) {
-  if (!frame || !type_name || !type_name[0])
+  if (!frame)
     return nullptr;
 
   SwiftASTContext *swift_ast_ctx = nullptr;
@@ -2055,7 +2055,7 @@ SwiftLanguageRuntime::GetPromiseForTypeNameAndFrame(const char *type_name,
         sc.function->GetCompilerType().GetTypeSystem());
 
   StreamString type_metadata_ptr_var_name;
-  type_metadata_ptr_var_name.Printf("$swift.type.%s", type_name);
+  type_metadata_ptr_var_name.Printf(u8"$\u03C4_%d_%d", depth, index);
   VariableList *var_list = frame->GetVariableList(false);
   if (!var_list)
     return nullptr;
@@ -2092,23 +2092,21 @@ SwiftLanguageRuntime::DoArchetypeBindingForType(StackFrame &stack_frame,
     target_swift_type = target_swift_type.transform(
         [this, &stack_frame,
          ast_context](swift::Type candidate_type) -> swift::Type {
-          if (swift::ArchetypeType *candidate_archetype =
-                  llvm::dyn_cast_or_null<swift::ArchetypeType>(
-                      candidate_type.getPointer())) {
-            ConstString candidate_name(candidate_archetype->getFullName());
-
-            CompilerType concrete_type = this->GetConcreteType(
-                &stack_frame, candidate_name);
-            Status import_error;
-            CompilerType target_concrete_type =
-                ast_context->ImportType(concrete_type, import_error);
-
-            if (target_concrete_type.IsValid())
-              return swift::Type(GetSwiftType(target_concrete_type));
-            else
-              return candidate_type;
-          } else
+          auto *type_param =
+              llvm::dyn_cast_or_null<swift::GenericTypeParamType>(
+                  candidate_type.getPointer());
+          if (!type_param)
             return candidate_type;
+          CompilerType concrete_type = this->GetConcreteType(
+              &stack_frame, type_param->getDepth(), type_param->getIndex());
+          Status import_error;
+          CompilerType target_concrete_type =
+              ast_context->ImportType(concrete_type, import_error);
+
+          if (target_concrete_type.IsValid())
+            return swift::Type(GetSwiftType(target_concrete_type));
+
+          return candidate_type;
         });
 
     return CompilerType(ast_context->GetASTContext(),
@@ -2117,12 +2115,16 @@ SwiftLanguageRuntime::DoArchetypeBindingForType(StackFrame &stack_frame,
   return base_type;
 }
 
-bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_Archetype(
+bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_GenericTypeParam(
     ValueObject &in_value, lldb::DynamicValueType use_dynamic,
     TypeAndOrName &class_type_or_name, Address &address) {
-  const char *type_name(in_value.GetTypeName().GetCString());
+  //const char *type_name(in_value.GetTypeName().GetCString());
   StackFrame *frame(in_value.GetFrameSP().get());
-  MetadataPromiseSP promise_sp(GetPromiseForTypeNameAndFrame(type_name, frame));
+    auto swift_type = GetSwiftType(in_value.GetCompilerType());
+  auto generic_type_param =
+      llvm::cast<swift::GenericTypeParamType>(swift_type.getPointer());
+  MetadataPromiseSP promise_sp(GetPromiseForTypeNameAndFrame(
+      generic_type_param->getDepth(), generic_type_param->getIndex(), frame));
   if (!promise_sp)
     return false;
   if (!GetDynamicTypeAndAddress_Promise(in_value, promise_sp, use_dynamic,
@@ -2366,6 +2368,8 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress_IndirectEnumCase(
 Value::ValueType SwiftLanguageRuntime::GetValueType(
     Value::ValueType static_value_type, const CompilerType &static_type,
     const CompilerType &dynamic_type, bool is_indirect_enum_case) {
+  llvm::errs()<<"GetValueType()\n  static: ";((swift::TypeBase*)static_type.GetOpaqueQualType())->dump();
+  llvm::errs()<<"  dynamic: ";((swift::TypeBase*)dynamic_type.GetOpaqueQualType())->dump();
   Flags static_type_flags(static_type.GetTypeInfo());
   Flags dynamic_type_flags(dynamic_type.GetTypeInfo());
 
@@ -2395,7 +2399,8 @@ Value::ValueType SwiftLanguageRuntime::GetValueType(
         return Value::eValueTypeLoadAddress;
       }
     }
-    if (static_type_flags.AllSet(eTypeIsSwift | eTypeIsArchetype)) {
+    if (static_type_flags.AllSet(eTypeIsSwift | eTypeIsGenericTypeParam)) {
+      // AUDIT THIS>
       // if I am handling a non-pointer Swift type obtained from an archetype,
       // then the runtime vends the location
       // of the object, not the object per se (since the object is not a pointer
@@ -2407,13 +2412,16 @@ Value::ValueType SwiftLanguageRuntime::GetValueType(
         return Value::eValueTypeLoadAddress;
     }
 
+    // AUDIT THIS>
     if (static_type_flags.AllSet(eTypeIsSwift | eTypeIsPointer) &&
-        static_type_flags.AllClear(eTypeIsArchetype)) {
+        static_type_flags.AllClear(eTypeIsGenericTypeParam)) {
       if (is_indirect_enum_case || static_type_flags.AllClear(eTypeIsBuiltIn))
         return Value::eValueTypeLoadAddress;
     }
   }
 
+  // Enabling this makes the inout_variables test hang.
+  //  return Value::eValueTypeScalar;
   if (static_type_flags.AllSet(eTypeIsSwift) &&
       dynamic_type_flags.AllSet(eTypeIsSwift) &&
       dynamic_type_flags.AllClear(eTypeIsPointer | eTypeInstanceIsPointer))
@@ -2465,8 +2473,8 @@ bool SwiftLanguageRuntime::GetDynamicTypeAndAddress(
       else if (type_info.AnySet(eTypeIsProtocol))
         success = GetDynamicTypeAndAddress_Protocol(
             in_value, use_dynamic, class_type_or_name, address);
-      else if (type_info.AnySet(eTypeIsArchetype))
-        success = GetDynamicTypeAndAddress_Archetype(
+      else if (type_info.AnySet(eTypeIsGenericTypeParam))
+        success = GetDynamicTypeAndAddress_GenericTypeParam(
             in_value, use_dynamic, class_type_or_name, address);
       else if (type_info.AnySet(eTypeIsTuple))
         success = GetDynamicTypeAndAddress_Tuple(in_value, use_dynamic,
@@ -2503,8 +2511,9 @@ SwiftLanguageRuntime::FixUpDynamicType(const TypeAndOrName &type_and_or_name,
   // could either be a Swift type (no need to change anything), or an ObjC type
   // in which case it needs to be made into a pointer
   if (type_flags.AnySet(eTypeIsPointer))
+    // AUDIT THIS>
     should_be_made_into_ptr =
-        (type_flags.AllClear(eTypeIsArchetype | eTypeIsBuiltIn) &&
+        (type_flags.AllClear(eTypeIsGenericTypeParam | eTypeIsBuiltIn) &&
          !IsIndirectEnumCase(static_value));
   else if (type_flags.AnySet(eTypeInstanceIsPointer))
     should_be_made_into_ptr = !type_andor_name_flags.AllSet(eTypeIsSwift);
@@ -2594,7 +2603,7 @@ bool SwiftLanguageRuntime::CouldHaveDynamicValue(ValueObject &in_value) {
 
 CompilerType
 SwiftLanguageRuntime::GetConcreteType(ExecutionContextScope *exe_scope,
-                                      ConstString abstract_type_name) {
+                                      unsigned depth, unsigned index) {
   if (!exe_scope)
     return CompilerType();
 
@@ -2603,7 +2612,7 @@ SwiftLanguageRuntime::GetConcreteType(ExecutionContextScope *exe_scope,
     return CompilerType();
 
   MetadataPromiseSP promise_sp(
-      GetPromiseForTypeNameAndFrame(abstract_type_name.GetCString(), frame));
+      GetPromiseForTypeNameAndFrame(depth, index, frame));
   if (!promise_sp)
     return CompilerType();
 

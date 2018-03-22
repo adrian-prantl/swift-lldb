@@ -290,10 +290,14 @@ void SwiftUserExpression::ScanContext(ExecutionContext &exe_ctx, Status &err) {
               log->Printf("    [SUE::SC] Argument name: %s",
                           template_arg_name.AsCString());
 
-            CompilerType concrete_type =
-                exe_ctx.GetProcessRef()
+            CompilerType concrete_type = template_arg_type;
+            auto *swift_type =
+              (swift::TypeBase *)(template_arg_type.GetOpaqueQualType());
+            if (auto generic_type_param =
+                  llvm::dyn_cast_or_null<swift::GenericTypeParamType>(swift_type))
+              concrete_type = exe_ctx.GetProcessRef()
                     .GetSwiftLanguageRuntime()
-                    ->GetConcreteType(frame, template_arg_name);
+                    ->GetConcreteType(frame, generic_type_param->getDepth(), generic_type_param->getIndex());
 
             const char *printable_name;
             if (concrete_type.IsValid())
@@ -318,10 +322,14 @@ void SwiftUserExpression::ScanContext(ExecutionContext &exe_ctx, Status &err) {
               log->Printf("    [SUE::SC] Argument name: %s",
                           template_arg_name.AsCString());
 
-            CompilerType concrete_type =
-                exe_ctx.GetProcessRef()
-                    .GetSwiftLanguageRuntime()
-                    ->GetConcreteType(frame, template_arg_name);
+            CompilerType concrete_type = template_arg_type;
+            auto *swift_type =
+              (swift::TypeBase *)(template_arg_type.GetOpaqueQualType());
+            if (auto generic_type_param =
+                llvm::dyn_cast_or_null<swift::GenericTypeParamType>(swift_type))
+              concrete_type = exe_ctx.GetProcessRef()
+                .GetSwiftLanguageRuntime()
+                ->GetConcreteType(frame, generic_type_param->getDepth(), generic_type_param->getIndex());
 
             if (log)
               log->Printf("    [SUE::SC] Argument type: %s",

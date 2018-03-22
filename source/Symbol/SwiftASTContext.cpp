@@ -5254,7 +5254,8 @@ bool SwiftASTContext::IsPossibleDynamicType(void *type,
     // FIXME: use the dynamic_pointee_type
     Flags type_flags(GetTypeInfo(type, nullptr));
 
-    if (type_flags.AnySet(eTypeIsArchetype | eTypeIsClass | eTypeIsProtocol))
+    if (type_flags.AnySet(eTypeIsGeneric | eTypeIsClass |
+                          eTypeIsProtocol))
       return true;
 
     if (type_flags.AnySet(eTypeIsStructUnion | eTypeIsEnumeration |
@@ -5547,9 +5548,9 @@ SwiftASTContext::GetTypeInfo(void *type,
   const swift::TypeKind type_kind = swift_can_type->getKind();
   uint32_t swift_flags = eTypeIsSwift;
   switch (type_kind) {
+  case swift::TypeKind::Archetype:
   case swift::TypeKind::DependentMember:
   case swift::TypeKind::Error:
-  case swift::TypeKind::GenericTypeParam:
   case swift::TypeKind::Module:
   case swift::TypeKind::TypeVariable:
     break;
@@ -5642,9 +5643,9 @@ SwiftASTContext::GetTypeInfo(void *type,
     swift_flags |= eTypeIsMetatype | eTypeHasValue;
     break;
 
-  case swift::TypeKind::Archetype:
+  case swift::TypeKind::GenericTypeParam:
     swift_flags |=
-        eTypeHasValue | eTypeIsScalar | eTypeIsPointer | eTypeIsArchetype;
+      eTypeHasValue | eTypeIsScalar | eTypeIsPointer | eTypeIsGenericTypeParam| eTypeIsGeneric;
     break;
 
   case swift::TypeKind::InOut:
@@ -6056,6 +6057,34 @@ SwiftASTContext::GetUnboundType(lldb::opaque_compiler_type_t type) {
   return CompilerType(GetASTContext(), GetSwiftType(type));
 }
 
+CompilerType SwiftASTContext::MapIntoContext(lldb::StackFrameSP &frame_sp,
+                                             lldb::opaque_compiler_type_t type) {
+  VALID_OR_RETURN(CompilerType());
+  
+  if (type) {
+    swift::CanType swift_can_type(GetCanonicalSwiftType(type));
+    const SymbolContext &sc(frame_sp->GetSymbolContext(eSymbolContextFunction));
+    if (!sc.function || (swift_can_type && !swift_can_type->hasTypeParameter()))
+      return CompilerType(GetASTContext(), GetSwiftType(type));
+    auto *ctx =
+      llvm::dyn_cast_or_null<SwiftASTContext>(
+          sc.function->GetCompilerType().GetTypeSystem());
+    if (!ctx)
+      return CompilerType(GetASTContext(), GetSwiftType(type));
+
+    // FIXME: we need the innermost non-inlined function.
+    auto function_name = sc.GetFunctionName(Mangled::ePreferMangled);
+    std::string error;
+    swift::Decl *func_decl =
+      swift::ide::getDeclFromMangledSymbolName(*ctx->GetASTContext(),
+                                               function_name.GetStringRef(),
+                                               error);
+    if (auto *dc = llvm::dyn_cast_or_null<swift::DeclContext>(func_decl))
+      return {GetASTContext(), dc->mapTypeIntoContext(swift_can_type)};
+  }
+  return CompilerType(GetASTContext(), GetSwiftType(type));
+}
+
 //----------------------------------------------------------------------
 // Create related types using the current type's AST
 //----------------------------------------------------------------------
@@ -6125,12 +6154,16 @@ uint64_t SwiftASTContext::GetBitSize(lldb::opaque_compiler_type_t type,
                                      ExecutionContextScope *exe_scope) {
   if (type) {
     swift::CanType swift_can_type(GetCanonicalSwiftType(type));
+    // FIXME: Query remote mirrors for this.
+    if (swift_can_type->hasTypeParameter())
+      return GetPointerByteSize();
+
     const swift::TypeKind type_kind = swift_can_type->getKind();
     switch (type_kind) {
-    case swift::TypeKind::Archetype:
     case swift::TypeKind::LValue:
     case swift::TypeKind::UnboundGeneric:
     case swift::TypeKind::GenericFunction:
+    case swift::TypeKind::Archetype:
     case swift::TypeKind::Function:
       return GetPointerByteSize() * 8;
     default:
@@ -6190,6 +6223,7 @@ lldb::Encoding SwiftASTContext::GetEncoding(void *type, uint64_t &count) {
   case swift::TypeKind::BuiltinBridgeObject:
   case swift::TypeKind::Class: // Classes are pointers in swift...
   case swift::TypeKind::BoundGenericClass:
+  case swift::TypeKind::GenericTypeParam:
     return lldb::eEncodingUint;
 
   case swift::TypeKind::BuiltinVector:
@@ -6202,7 +6236,6 @@ lldb::Encoding SwiftASTContext::GetEncoding(void *type, uint64_t &count) {
     return CompilerType(GetASTContext(),
                         swift_can_type->getReferenceStorageReferent())
         .GetEncoding(count);
-  case swift::TypeKind::GenericTypeParam:
   case swift::TypeKind::DependentMember:
     break;
 

@@ -293,6 +293,9 @@ public:
 
   CompilerType GetUnboundType() const;
 
+  CompilerType MapIntoContext(lldb::StackFrameSP &frame_sp,
+                              lldb::opaque_compiler_type_t type) const;
+  
   //----------------------------------------------------------------------
   // Create related types using the current type's AST
   //----------------------------------------------------------------------

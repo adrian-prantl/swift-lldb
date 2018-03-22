@@ -846,7 +846,7 @@ SwiftLanguage::GetHardcodedSummaries() {
         return swift_metatype_summary_sp;
       }
       if (valobj.GetName().GetLength() > 12 &&
-          valobj.GetName().GetStringRef().startswith("$swift.type.") &&
+          valobj.GetName().GetStringRef().startswith(u8"$\u03C4_") &&
           type.GetTypeName() == g_RawPointerType) {
         if (!swift_metatype_summary_sp.get()) {
           TypeSummaryImpl::Flags flags;

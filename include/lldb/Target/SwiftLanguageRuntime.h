@@ -319,7 +319,7 @@ public:
                                                  CompilerType base_type);
 
   virtual CompilerType GetConcreteType(ExecutionContextScope *exe_scope,
-                                       ConstString abstract_type_name) override;
+                                       unsigned depth, unsigned index) override;
 
   virtual bool CouldHaveDynamicValue(ValueObject &in_value) override;
 
@@ -386,7 +386,7 @@ protected:
       ValueObject &in_value, lldb::DynamicValueType use_dynamic,
       TypeAndOrName &class_type_or_name, Address &address);
 
-  virtual bool GetDynamicTypeAndAddress_Archetype(
+  virtual bool GetDynamicTypeAndAddress_GenericTypeParam(
       ValueObject &in_value, lldb::DynamicValueType use_dynamic,
       TypeAndOrName &class_type_or_name, Address &address);
 
@@ -412,7 +412,8 @@ protected:
       lldb::DynamicValueType use_dynamic, TypeAndOrName &class_type_or_name,
       Address &address);
 
-  virtual MetadataPromiseSP GetPromiseForTypeNameAndFrame(const char *type_name,
+  virtual MetadataPromiseSP GetPromiseForTypeNameAndFrame(unsigned depth,
+                                                          unsigned index,
                                                           StackFrame *frame);
 
   bool GetTargetOfPartialApply(SymbolContext &curr_sc, ConstString &apply_name,

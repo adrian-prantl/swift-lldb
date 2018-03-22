@@ -373,6 +373,7 @@ public:
   void SetNeedsUpdate();
 
   CompilerType GetCompilerType();
+  CompilerType MapTypeIntoContext();
 
   // this vends a TypeImpl that is useful at the SB API layer
   virtual TypeImpl GetTypeImpl();

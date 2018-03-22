@@ -288,6 +288,18 @@ void ValueObject::ClearDynamicTypeInformation() {
   SetSyntheticChildren(lldb::SyntheticChildrenSP());
 }
 
+CompilerType ValueObject::MapTypeIntoContext() {
+  auto type = GetCompilerType();
+  if (auto frame_sp = GetExecutionContextRef().GetFrameSP()) {
+    const SymbolContext &sc(frame_sp->GetSymbolContext(eSymbolContextFunction));
+    if (sc.function) {
+      auto *type_system = sc.function->GetCompilerType().GetTypeSystem();
+      type = type_system->MapIntoContext(frame_sp, type.GetOpaqueQualType());
+    }
+  }
+  return type;
+}
+
 CompilerType ValueObject::MaybeCalculateCompleteType() {
   CompilerType compiler_type(GetCompilerTypeImpl());
 
@@ -583,6 +595,7 @@ ValueObject::GetChildAtNamePath(llvm::ArrayRef<ConstString> names,
                                 ConstString *name_of_error) {
   if (names.size() == 0)
     return GetSP();
+  
   ValueObjectSP root(GetSP());
   for (ConstString name : names) {
     root = root->GetChildMemberWithName(name, true);
@@ -635,8 +648,9 @@ ValueObjectSP ValueObject::GetChildMemberWithName(const ConstString &name,
   if (!GetCompilerType().IsValid())
     return ValueObjectSP();
 
+  CompilerType type = MapTypeIntoContext();
   const size_t num_child_indexes =
-      GetCompilerType().GetIndexOfChildMemberWithName(
+      type.GetIndexOfChildMemberWithName(
           name.GetCString(), omit_empty_base_classes, child_indexes);
   if (num_child_indexes > 0) {
     std::vector<uint32_t>::const_iterator pos = child_indexes.begin();
@@ -713,7 +727,7 @@ ValueObject *ValueObject::CreateChildAtIndex(size_t idx,
 
   ExecutionContext exe_ctx(GetExecutionContextRef());
 
-  child_compiler_type = GetCompilerType().GetChildCompilerTypeAtIndex(
+  child_compiler_type = MapTypeIntoContext().GetChildCompilerTypeAtIndex(
       &exe_ctx, idx, transparent_pointers, omit_empty_base_classes,
       ignore_array_bounds, child_name_str, child_byte_size, child_byte_offset,
       child_bitfield_bit_size, child_bitfield_bit_offset, child_is_base_class,

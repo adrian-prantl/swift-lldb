@@ -529,6 +529,15 @@ CompilerType CompilerType::GetUnboundType() const {
   return CompilerType();
 }
 
+CompilerType CompilerType::MapIntoContext(StackFrameSP &frame_sp,
+                                          lldb::opaque_compiler_type_t type)
+const {
+  if (IsValid())
+    return m_type_system->MapIntoContext(frame_sp, m_type);
+  return CompilerType();
+}
+
+
 // CompilerType
 // CompilerType::RemoveFastQualifiers () const
 //{
